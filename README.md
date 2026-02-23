@@ -182,6 +182,7 @@ bun run dev
 Then open `http://localhost:3000`.
 
 Notes:
+
 - `pdftoppm` must be installed on host for PDF support (Docker image already includes it)
 - macOS: `brew install poppler`
 - Ubuntu/Debian: `sudo apt-get install poppler-utils`
@@ -190,15 +191,15 @@ Notes:
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `OLLAMA_HOST` | `http://host.docker.internal:11434` | Ollama base URL |
-| `OLLAMA_MODEL` | `glm-ocr` | Model name |
-| `PORT` | `3000` | App port |
-| `PDF_DPI` | `200` | PDF render DPI |
-| `OCR_TIMEOUT` | `120` | Per-page timeout (seconds) |
-| `MAX_FILE_SIZE` | `50` | Max file size in MB |
-| `NUM_CTX` | `16384` | `num_ctx` sent to Ollama |
+| Variable        | Default                             | Description                |
+| --------------- | ----------------------------------- | -------------------------- |
+| `OLLAMA_HOST`   | `http://host.docker.internal:11434` | Ollama base URL            |
+| `OLLAMA_MODEL`  | `glm-ocr`                           | Model name                 |
+| `PORT`          | `3000`                              | App port                   |
+| `PDF_DPI`       | `200`                               | PDF render DPI             |
+| `OCR_TIMEOUT`   | `120`                               | Per-page timeout (seconds) |
+| `MAX_FILE_SIZE` | `50`                                | Max file size in MB        |
+| `NUM_CTX`       | `16384`                             | `num_ctx` sent to Ollama   |
 
 ## API
 

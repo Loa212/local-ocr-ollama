@@ -35,7 +35,7 @@ const config: AppConfig = {
   port: Number.parseInt(Bun.env.PORT ?? "3000", 10),
   ollamaHost: Bun.env.OLLAMA_HOST ?? "http://host.docker.internal:11434",
   ollamaModel: Bun.env.OLLAMA_MODEL ?? "glm-ocr",
-  pdfDpi: Number.parseInt(Bun.env.PDF_DPI ?? "200", 10),
+  pdfDpi: Number.parseInt(Bun.env.PDF_DPI ?? "300", 10),
   ocrTimeoutMs: Number.parseInt(Bun.env.OCR_TIMEOUT ?? "120", 10) * 1000,
   maxFileSizeBytes: Number.parseInt(Bun.env.MAX_FILE_SIZE ?? "50", 10) * 1024 * 1024,
   numCtx: Number.parseInt(Bun.env.NUM_CTX ?? "16384", 10)
@@ -141,12 +141,14 @@ async function buildHealthStatus(): Promise<HealthStatus> {
   };
 }
 
-async function streamOcrResults(files: File[], controller: ReadableStreamDefaultController<Uint8Array>): Promise<void> {
-  let aborted = false;
-
+async function streamOcrResults(
+  files: File[],
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  signal: AbortSignal
+): Promise<void> {
   const encoder = new TextEncoder();
   const send = (event: SseEventName, data: Record<string, unknown>) => {
-    if (aborted) {
+    if (signal.aborted) {
       return;
     }
     controller.enqueue(encoder.encode(toSseEvent(event, data)));
@@ -158,7 +160,7 @@ async function streamOcrResults(files: File[], controller: ReadableStreamDefault
   await mkdir(tempRoot, { recursive: true });
 
   for (const file of files) {
-    if (aborted) {
+    if (signal.aborted) {
       break;
     }
 
@@ -287,10 +289,12 @@ async function streamOcrResults(files: File[], controller: ReadableStreamDefault
     failed
   });
 
-  try {
-    controller.close();
-  } catch {
-    aborted = true;
+  if (!signal.aborted) {
+    try {
+      controller.close();
+    } catch {
+      // Client already disconnected
+    }
   }
 }
 
@@ -310,6 +314,7 @@ function collectFiles(formData: FormData): File[] {
 
 const server = Bun.serve({
   port: config.port,
+  idleTimeout: 255,
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
@@ -339,9 +344,13 @@ const server = Bun.serve({
         return new Response("No files uploaded", { status: 400 });
       }
 
+      const abortController = new AbortController();
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
-          void streamOcrResults(files, controller);
+          void streamOcrResults(files, controller, abortController.signal);
+        },
+        cancel() {
+          abortController.abort();
         }
       });
 

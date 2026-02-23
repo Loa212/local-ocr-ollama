@@ -49,7 +49,11 @@ export async function ocrImageToMarkdown(options: OcrOptions): Promise<string> {
         messages: [
           {
             role: "user",
-            content: "Convert this page to markdown.",
+            content:
+              "You are an OCR assistant. Transcribe every piece of text visible in this image into markdown. " +
+              "Preserve the document structure: use tables for tabular data, headers for section titles, and lists where appropriate. " +
+              "Include all text — form fields, labels, numbers, dates, addresses, fine print, and footnotes. " +
+              "Do not summarize, skip, or paraphrase any content. Output only the transcribed markdown.",
             images: [imageBase64]
           }
         ],
