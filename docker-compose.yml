@@ -1,0 +1,15 @@
+services:
+  ocr-app:
+    image: ${APP_NAME:-ocr-app}
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-glm-ocr}
+      - PDF_DPI=${PDF_DPI:-200}
+      - OCR_TIMEOUT=${OCR_TIMEOUT:-120}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-50}
+      - NUM_CTX=${NUM_CTX:-16384}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

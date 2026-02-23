@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Local OCR with Ollama</title>
+    <style>
+      :root {
+        --bg: #f3f0e8;
+        --card: #fffdf7;
+        --ink: #1d1b16;
+        --muted: #6c6254;
+        --line: #d4c7b4;
+        --accent: #0f766e;
+        --accent-soft: #cce7e3;
+        --warn: #9a3412;
+        --warn-soft: #f9d3c4;
+        --error: #991b1b;
+        --error-soft: #fecaca;
+        --radius: 14px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 20% 0%, #e5f4f1 0%, transparent 35%),
+          radial-gradient(circle at 80% 100%, #f9e4cf 0%, transparent 30%),
+          var(--bg);
+      }
+
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 16px 36px;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.35rem, 2.5vw, 2rem);
+        letter-spacing: 0.01em;
+      }
+
+      .health {
+        border: 1px solid var(--line);
+        background: var(--card);
+        border-radius: var(--radius);
+        padding: 12px;
+        margin-bottom: 14px;
+        font-size: 0.95rem;
+      }
+
+      .health.good {
+        border-color: #8fd4c9;
+        background: #eefbf8;
+      }
+
+      .health.warn {
+        border-color: #f3aa89;
+        background: #fff4ef;
+      }
+
+      .health.error {
+        border-color: #f2a1a1;
+        background: #fff2f2;
+      }
+
+      .dropzone {
+        border: 2px dashed var(--line);
+        border-radius: var(--radius);
+        min-height: 170px;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 20px;
+        background: color-mix(in srgb, var(--card) 92%, white 8%);
+        transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease;
+      }
+
+      .dropzone.drag {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        transform: translateY(-1px);
+      }
+
+      .dropzone button {
+        margin-top: 10px;
+        border: 1px solid var(--line);
+        background: white;
+        color: var(--ink);
+        border-radius: 10px;
+        padding: 8px 14px;
+        cursor: pointer;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+        margin-top: 16px;
+      }
+
+      @media (min-width: 900px) {
+        .grid {
+          grid-template-columns: 320px 1fr;
+        }
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 12px;
+      }
+
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 1rem;
+      }
+
+      .file-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 480px;
+        overflow: auto;
+      }
+
+      .file-item {
+        border: 1px solid var(--line);
+        background: white;
+        border-radius: 10px;
+        padding: 10px;
+        cursor: pointer;
+      }
+
+      .file-item.active {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px #d8efec;
+      }
+
+      .file-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .file-name {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+        font-size: 0.9rem;
+      }
+
+      .status {
+        font-size: 0.75rem;
+        border-radius: 999px;
+        padding: 2px 8px;
+        border: 1px solid var(--line);
+        white-space: nowrap;
+      }
+
+      .status.queued {
+        background: #f6f0e5;
+      }
+
+      .status.processing {
+        background: var(--accent-soft);
+        border-color: #8fd4c9;
+      }
+
+      .status.done {
+        background: #d9f8dc;
+        border-color: #88d192;
+      }
+
+      .status.error {
+        background: var(--error-soft);
+        border-color: #e58a8a;
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 0.8rem;
+        margin-top: 6px;
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+
+      .controls button,
+      .controls a,
+      .btn {
+        border: 1px solid var(--line);
+        background: white;
+        color: var(--ink);
+        border-radius: 10px;
+        padding: 7px 12px;
+        cursor: pointer;
+        text-decoration: none;
+        font: inherit;
+      }
+
+      .controls button.active {
+        background: var(--accent-soft);
+        border-color: #8fd4c9;
+      }
+
+      .btn.primary {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+      }
+
+      .output {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: white;
+        min-height: 360px;
+        max-height: 540px;
+        overflow: auto;
+        padding: 12px;
+      }
+
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-family: "SF Mono", Menlo, Consolas, monospace;
+        font-size: 0.85rem;
+        line-height: 1.45;
+      }
+
+      .preview h1,
+      .preview h2,
+      .preview h3 {
+        margin-top: 1rem;
+      }
+
+      .preview p {
+        margin: 0.7rem 0;
+      }
+
+      .footer {
+        margin-top: 12px;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+
+      .hint {
+        margin-top: 8px;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+
+      code {
+        background: #f8f3e8;
+        padding: 1px 5px;
+        border-radius: 5px;
+        border: 1px solid #eadfcf;
+      }
+
+      .warning {
+        margin-top: 8px;
+        border: 1px solid #f3c085;
+        background: #fff6e9;
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="topbar">
+        <h1>Local OCR via Ollama</h1>
+        <button class="btn" id="refresh-health">Refresh Health</button>
+      </div>
+
+      <div class="health" id="health">Checking health...</div>
+
+      <div class="dropzone" id="dropzone">
+        <div>
+          <div><strong>Drop image or PDF files here</strong></div>
+          <div class="hint">Supports .jpg .jpeg .png .webp .pdf</div>
+          <button id="choose-files" type="button">Choose Files</button>
+          <input id="file-input" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf" hidden />
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>Files</h2>
+          <div class="file-list" id="file-list"></div>
+          <div class="footer" id="global-progress">0 files</div>
+          <button class="btn" id="download-all" type="button">Download All (.md)</button>
+        </div>
+
+        <div class="card">
+          <h2 id="result-title">Result</h2>
+          <div class="controls">
+            <button id="tab-raw" class="active" type="button">Raw</button>
+            <button id="tab-preview" type="button">Preview</button>
+            <button id="copy-btn" type="button">Copy</button>
+            <button id="download-btn" type="button">Download .md</button>
+          </div>
+          <div class="output" id="output"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const state = {
+        files: new Map(),
+        order: [],
+        selectedFileId: null,
+        activeTab: "raw"
+      };
+
+      const dropzone = document.getElementById("dropzone");
+      const fileInput = document.getElementById("file-input");
+      const chooseFiles = document.getElementById("choose-files");
+      const fileList = document.getElementById("file-list");
+      const output = document.getElementById("output");
+      const resultTitle = document.getElementById("result-title");
+      const tabRaw = document.getElementById("tab-raw");
+      const tabPreview = document.getElementById("tab-preview");
+      const copyBtn = document.getElementById("copy-btn");
+      const downloadBtn = document.getElementById("download-btn");
+      const downloadAllBtn = document.getElementById("download-all");
+      const globalProgress = document.getElementById("global-progress");
+      const healthEl = document.getElementById("health");
+      const refreshHealth = document.getElementById("refresh-health");
+
+      chooseFiles.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files && fileInput.files.length) {
+          startBatch(Array.from(fileInput.files));
+          fileInput.value = "";
+        }
+      });
+
+      dropzone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        dropzone.classList.add("drag");
+      });
+
+      dropzone.addEventListener("dragleave", () => {
+        dropzone.classList.remove("drag");
+      });
+
+      dropzone.addEventListener("drop", (event) => {
+        event.preventDefault();
+        dropzone.classList.remove("drag");
+        const files = Array.from(event.dataTransfer?.files || []);
+        if (files.length > 0) {
+          startBatch(files);
+        }
+      });
+
+      tabRaw.addEventListener("click", () => {
+        state.activeTab = "raw";
+        renderResult();
+      });
+
+      tabPreview.addEventListener("click", () => {
+        state.activeTab = "preview";
+        renderResult();
+      });
+
+      copyBtn.addEventListener("click", async () => {
+        const item = currentFile();
+        if (!item || !item.markdown) return;
+        await navigator.clipboard.writeText(item.markdown);
+        copyBtn.textContent = "Copied";
+        setTimeout(() => {
+          copyBtn.textContent = "Copy";
+        }, 900);
+      });
+
+      downloadBtn.addEventListener("click", () => {
+        const item = currentFile();
+        if (!item || !item.markdown) return;
+        downloadText(item.markdown, toMarkdownName(item.fileName));
+      });
+
+      downloadAllBtn.addEventListener("click", () => {
+        const done = state.order
+          .map((id) => state.files.get(id))
+          .filter((item) => item && item.status === "done" && item.markdown);
+
+        if (done.length === 0) {
+          return;
+        }
+
+        const payload = done
+          .map((item) => `# ${item.fileName}\n\n${item.markdown}`)
+          .join("\n\n---\n\n");
+
+        downloadText(payload, "ocr-results.md");
+      });
+
+      refreshHealth.addEventListener("click", () => {
+        void fetchHealth();
+      });
+
+      function detectPlatform() {
+        const userAgent = navigator.userAgent.toLowerCase();
+        if (userAgent.includes("windows")) return "windows";
+        if (userAgent.includes("mac")) return "mac";
+        return "linux";
+      }
+
+      function suggestedFix(health) {
+        const platform = detectPlatform();
+        if (!health.ollama) {
+          if (platform === "windows") {
+            return "Start Ollama from the Start Menu, then run: ollama pull glm-ocr";
+          }
+          return "Run: ollama serve && ollama pull glm-ocr";
+        }
+
+        if (!health.modelReady) {
+          return "Run: ollama pull glm-ocr";
+        }
+
+        if (!health.poppler) {
+          return "Rebuild container image so poppler-utils is installed.";
+        }
+
+        return "";
+      }
+
+      async function fetchHealth() {
+        try {
+          const response = await fetch("/api/health");
+          const health = await response.json();
+
+          const healthy = health.ollama && health.modelReady && health.poppler;
+          healthEl.className = `health ${healthy ? "good" : health.ollama ? "warn" : "error"}`;
+
+          const line = `App: ${health.app ? "ok" : "down"} | Ollama: ${
+            health.ollama ? "ok" : "down"
+          } | Model (${health.model}): ${health.modelReady ? "ready" : "missing"} | Poppler: ${
+            health.poppler ? "ok" : "missing"
+          }`;
+
+          const fix = suggestedFix(health);
+          healthEl.innerHTML = fix ? `${line}<div class="warning">${fix}</div>` : line;
+        } catch (error) {
+          healthEl.className = "health error";
+          healthEl.textContent = "Health check failed. Is the app server running?";
+        }
+      }
+
+      function downloadText(content, fileName) {
+        const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function toMarkdownName(fileName) {
+        const index = fileName.lastIndexOf(".");
+        if (index === -1) return `${fileName}.md`;
+        return `${fileName.slice(0, index)}.md`;
+      }
+
+      function renderFileList() {
+        fileList.innerHTML = "";
+
+        for (const fileId of state.order) {
+          const item = state.files.get(fileId);
+          if (!item) continue;
+
+          const row = document.createElement("div");
+          row.className = `file-item ${state.selectedFileId === fileId ? "active" : ""}`;
+          row.addEventListener("click", () => {
+            state.selectedFileId = fileId;
+            renderFileList();
+            renderResult();
+          });
+
+          const progressText =
+            item.totalPages > 0
+              ? `Page ${Math.min(item.page || 0, item.totalPages)} of ${item.totalPages}`
+              : "Waiting";
+
+          row.innerHTML = `
+            <div class="file-row">
+              <div class="file-name">${escapeHtml(item.fileName)}</div>
+              <div class="status ${item.status}">${escapeHtml(item.status)}</div>
+            </div>
+            <div class="meta">${progressText}${
+              item.elapsedMs ? ` • ${(item.elapsedMs / 1000).toFixed(1)}s` : ""
+            }</div>
+            ${item.error ? `<div class="meta" style="color:#991b1b">${escapeHtml(item.error)}</div>` : ""}
+          `;
+
+          fileList.appendChild(row);
+        }
+
+        const total = state.order.length;
+        const complete = state.order
+          .map((id) => state.files.get(id))
+          .filter((item) => item && (item.status === "done" || item.status === "error")).length;
+        globalProgress.textContent = `${complete} of ${total} files complete`;
+      }
+
+      function escapeHtml(value) {
+        return value
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function markdownToHtml(markdown) {
+        let html = escapeHtml(markdown);
+
+        html = html.replace(/```([\s\S]*?)```/g, (_, code) => `<pre>${code.trim()}</pre>`);
+        html = html.replace(/^###\s(.+)$/gm, "<h3>$1</h3>");
+        html = html.replace(/^##\s(.+)$/gm, "<h2>$1</h2>");
+        html = html.replace(/^#\s(.+)$/gm, "<h1>$1</h1>");
+        html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+        html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+        const blocks = html.split(/\n\n+/).map((chunk) => chunk.trim()).filter(Boolean);
+        html = blocks
+          .map((chunk) => {
+            if (chunk.startsWith("<h") || chunk.startsWith("<pre>")) {
+              return chunk;
+            }
+            return `<p>${chunk.replaceAll("\n", "<br />")}</p>`;
+          })
+          .join("\n");
+
+        return html;
+      }
+
+      function currentFile() {
+        if (!state.selectedFileId) return null;
+        return state.files.get(state.selectedFileId) || null;
+      }
+
+      function renderResult() {
+        const item = currentFile();
+        tabRaw.classList.toggle("active", state.activeTab === "raw");
+        tabPreview.classList.toggle("active", state.activeTab === "preview");
+        output.classList.toggle("preview", state.activeTab === "preview");
+
+        if (!item) {
+          resultTitle.textContent = "Result";
+          output.innerHTML = "<div class='meta'>Select a file to see OCR output.</div>";
+          return;
+        }
+
+        resultTitle.textContent = `Result: ${item.fileName}`;
+
+        const markdown = item.markdown || "";
+        if (state.activeTab === "raw") {
+          output.innerHTML = `<pre>${escapeHtml(markdown || "No output yet.")}</pre>`;
+        } else {
+          output.innerHTML = markdown ? markdownToHtml(markdown) : "<div class='meta'>No output yet.</div>";
+        }
+      }
+
+      async function readSse(response, onEvent) {
+        if (!response.body) {
+          throw new Error("Streaming not supported in this browser");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          let idx = buffer.indexOf("\n\n");
+          while (idx !== -1) {
+            const packet = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            idx = buffer.indexOf("\n\n");
+
+            const lines = packet.split("\n");
+            let event = "message";
+            let data = "";
+
+            for (const line of lines) {
+              if (line.startsWith("event:")) {
+                event = line.slice(6).trim();
+              } else if (line.startsWith("data:")) {
+                data += line.slice(5).trim();
+              }
+            }
+
+            if (!data) continue;
+
+            try {
+              onEvent(event, JSON.parse(data));
+            } catch (error) {
+              console.error("Failed to parse SSE event", error);
+            }
+          }
+        }
+      }
+
+      function ensureFile(fileId, fileName) {
+        if (!state.files.has(fileId)) {
+          state.files.set(fileId, {
+            fileId,
+            fileName,
+            status: "queued",
+            totalPages: 0,
+            page: 0,
+            markdown: "",
+            error: "",
+            elapsedMs: null,
+            createdAt: Date.now()
+          });
+          state.order.push(fileId);
+        }
+        if (!state.selectedFileId) {
+          state.selectedFileId = fileId;
+        }
+        return state.files.get(fileId);
+      }
+
+      function handleStreamEvent(event, payload) {
+        if (event === "file-start") {
+          const item = ensureFile(payload.fileId, payload.fileName);
+          item.status = "processing";
+          item.totalPages = payload.pages || 0;
+          item.page = 0;
+          item.error = "";
+        }
+
+        if (event === "page-progress") {
+          const item = state.files.get(payload.fileId);
+          if (item) {
+            item.status = "processing";
+            item.page = payload.page || item.page;
+            item.totalPages = payload.totalPages || item.totalPages;
+          }
+        }
+
+        if (event === "page-done") {
+          const item = state.files.get(payload.fileId);
+          if (item) {
+            const pageMarker = item.totalPages > 1 ? `\n\n---\n\n<!-- Page ${payload.page} -->\n\n` : "";
+            item.markdown += `${item.markdown ? pageMarker : ""}${payload.markdown || ""}`;
+          }
+        }
+
+        if (event === "file-done") {
+          const item = ensureFile(payload.fileId, payload.fileName || "file");
+          item.status = "done";
+          item.markdown = payload.markdown || item.markdown;
+          item.elapsedMs = payload.elapsedMs || null;
+          item.error = "";
+        }
+
+        if (event === "error") {
+          const item = ensureFile(payload.fileId, payload.fileName || "file");
+          item.status = "error";
+          item.error = payload.error || "Unknown error";
+        }
+
+        renderFileList();
+        renderResult();
+      }
+
+      async function startBatch(files) {
+        const payload = new FormData();
+        for (const file of files) {
+          payload.append("files", file, file.name);
+        }
+
+        try {
+          const response = await fetch("/api/ocr", {
+            method: "POST",
+            body: payload
+          });
+
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(text || `Upload failed with status ${response.status}`);
+          }
+
+          await readSse(response, handleStreamEvent);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown upload error";
+          const fallbackId = crypto.randomUUID();
+          ensureFile(fallbackId, files[0]?.name || "upload");
+          const item = state.files.get(fallbackId);
+          item.status = "error";
+          item.error = message;
+          renderFileList();
+          renderResult();
+        }
+      }
+
+      void fetchHealth();
+      setInterval(() => {
+        void fetchHealth();
+      }, 10000);
+
+      renderFileList();
+      renderResult();
+    </script>
+  </body>
+</html>
