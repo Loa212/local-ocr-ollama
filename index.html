@@ -445,6 +445,10 @@
           return "Rebuild container image so poppler-utils is installed.";
         }
 
+        if (health.ocrBackend && health.glmOcrSidecar === false) {
+          return "GLM-OCR sidecar is not responding. Check: docker compose logs glmocr-sidecar";
+        }
+
         return "";
       }
 
@@ -453,14 +457,20 @@
           const response = await fetch("/api/health");
           const health = await response.json();
 
-          const healthy = health.ollama && health.modelReady && health.poppler;
-          healthEl.className = `health ${healthy ? "good" : health.ollama ? "warn" : "error"}`;
+          const coreHealthy = health.ollama && health.modelReady && health.poppler;
+          const sidecarOk = health.glmOcrSidecar === null || health.glmOcrSidecar === true;
+          const allHealthy = coreHealthy && sidecarOk;
+          healthEl.className = `health ${allHealthy ? "good" : health.ollama ? "warn" : "error"}`;
 
-          const line = `App: ${health.app ? "ok" : "down"} | Ollama: ${
+          let line = `App: ${health.app ? "ok" : "down"} | Ollama: ${
             health.ollama ? "ok" : "down"
           } | Model (${health.model}): ${health.modelReady ? "ready" : "missing"} | Poppler: ${
             health.poppler ? "ok" : "missing"
           }`;
+
+          if (health.ocrBackend) {
+            line += ` | GLM-OCR SDK: ${health.glmOcrSidecar ? "ok" : "down"}`;
+          }
 
           const fix = suggestedFix(health);
           healthEl.innerHTML = fix ? `${line}<div class="warning">${fix}</div>` : line;

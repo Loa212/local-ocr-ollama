@@ -11,5 +11,33 @@ services:
       - OCR_TIMEOUT=${OCR_TIMEOUT:-120}
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-50}
       - NUM_CTX=${NUM_CTX:-16384}
+      - OCR_BACKEND=${OCR_BACKEND:-http://glmocr-sidecar:5002}
+    volumes:
+      - ocr-tmp:/tmp/ocr-app
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      glmocr-sidecar:
+        condition: service_healthy
+
+  glmocr-sidecar:
+    build:
+      context: .
+      dockerfile: Dockerfile.glmocr
+    environment:
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-glm-ocr}
+      - ENABLE_LAYOUT=${ENABLE_LAYOUT:-true}
+    volumes:
+      - ocr-tmp:/tmp/ocr-app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+volumes:
+  ocr-tmp:

@@ -1,0 +1,51 @@
+server:
+  host: "0.0.0.0"
+  port: 5002
+  debug: false
+
+logging:
+  level: INFO
+
+pipeline:
+  maas:
+    enabled: false
+
+  ocr_api:
+    api_host: host.docker.internal
+    api_port: 11434
+    api_path: /api/generate
+    model: glm-ocr
+    api_mode: ollama_generate
+    api_scheme: http
+    api_key: null
+    verify_ssl: false
+    connect_timeout: 30
+    request_timeout: 300
+    retry_max_attempts: 2
+    retry_backoff_base_seconds: 0.5
+    retry_backoff_max_seconds: 8.0
+    connection_pool_size: 16
+
+  max_workers: 1
+  page_maxsize: 100
+  region_maxsize: 800
+
+  page_loader:
+    max_tokens: 16384
+    temperature: 0.01
+    top_p: 0.9
+    image_format: JPEG
+    pdf_dpi: 200
+
+  result_formatter:
+    filter_nested: true
+    output_format: both
+
+  enable_layout: true
+
+  layout:
+    model_dir: PaddlePaddle/PP-DocLayoutV3_safetensors
+    threshold: 0.3
+    batch_size: 1
+    workers: 1
+    layout_nms: true

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { convertPdfToPngPages } from "./pdf.ts";
-import { ocrImageToMarkdown } from "./ocr.ts";
+import { ocrImageToMarkdown, ocrImageViaGlmOcrSdk, normalizeHost } from "./ocr.ts";
 import * as logger from "./logger.ts";
 
 type HealthStatus = {
@@ -12,6 +12,8 @@ type HealthStatus = {
   modelReady: boolean;
   poppler: boolean;
   ollamaHost: string;
+  ocrBackend: string | null;
+  glmOcrSidecar: boolean | null;
 };
 
 type SseEventName =
@@ -30,6 +32,7 @@ type AppConfig = {
   ocrTimeoutMs: number;
   maxFileSizeBytes: number;
   numCtx: number;
+  ocrBackend: string | null;
 };
 
 const config: AppConfig = {
@@ -39,7 +42,8 @@ const config: AppConfig = {
   pdfDpi: Number.parseInt(Bun.env.PDF_DPI ?? "300", 10),
   ocrTimeoutMs: Number.parseInt(Bun.env.OCR_TIMEOUT ?? "120", 10) * 1000,
   maxFileSizeBytes: Number.parseInt(Bun.env.MAX_FILE_SIZE ?? "50", 10) * 1024 * 1024,
-  numCtx: Number.parseInt(Bun.env.NUM_CTX ?? "16384", 10)
+  numCtx: Number.parseInt(Bun.env.NUM_CTX ?? "16384", 10),
+  ocrBackend: Bun.env.OCR_BACKEND || null
 };
 
 const allowedExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".pdf"]);
@@ -99,8 +103,17 @@ async function checkPoppler(): Promise<boolean> {
   }
 }
 
-function normalizeHost(host: string): string {
-  return host.endsWith("/") ? host.slice(0, -1) : host;
+async function checkGlmOcrSidecar(): Promise<boolean> {
+  if (!config.ocrBackend) return false;
+  try {
+    const response = await fetch(`${normalizeHost(config.ocrBackend)}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000)
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function checkOllamaAndModel(): Promise<Pick<HealthStatus, "ollama" | "modelReady">> {
@@ -130,7 +143,11 @@ async function checkOllamaAndModel(): Promise<Pick<HealthStatus, "ollama" | "mod
 }
 
 async function buildHealthStatus(): Promise<HealthStatus> {
-  const [poppler, ollamaInfo] = await Promise.all([checkPoppler(), checkOllamaAndModel()]);
+  const [poppler, ollamaInfo, sidecar] = await Promise.all([
+    checkPoppler(),
+    checkOllamaAndModel(),
+    config.ocrBackend ? checkGlmOcrSidecar() : Promise.resolve(null)
+  ]);
 
   return {
     app: true,
@@ -138,7 +155,9 @@ async function buildHealthStatus(): Promise<HealthStatus> {
     ollama: ollamaInfo.ollama,
     model: config.ollamaModel,
     modelReady: ollamaInfo.modelReady,
-    ollamaHost: config.ollamaHost
+    ollamaHost: config.ollamaHost,
+    ocrBackend: config.ocrBackend,
+    glmOcrSidecar: sidecar as boolean | null
   };
 }
 
@@ -226,13 +245,22 @@ async function streamOcrResults(
         });
 
         try {
-          let markdown = await ocrImageToMarkdown({
-            imagePath: pagePaths[pageIndex],
-            ollamaHost: config.ollamaHost,
-            model: config.ollamaModel,
-            timeoutMs: config.ocrTimeoutMs,
-            numCtx: config.numCtx
-          });
+          let markdown: string;
+          if (config.ocrBackend) {
+            markdown = await ocrImageViaGlmOcrSdk({
+              imagePath: pagePaths[pageIndex],
+              glmOcrHost: config.ocrBackend,
+              timeoutMs: config.ocrTimeoutMs
+            });
+          } else {
+            markdown = await ocrImageToMarkdown({
+              imagePath: pagePaths[pageIndex],
+              ollamaHost: config.ollamaHost,
+              model: config.ollamaModel,
+              timeoutMs: config.ocrTimeoutMs,
+              numCtx: config.numCtx
+            });
+          }
 
           if (isRepetitiveOutput(markdown)) {
             markdown = `${markdown.slice(0, 10_000)}\n\n[Truncated: repetitive OCR output detected]`;
