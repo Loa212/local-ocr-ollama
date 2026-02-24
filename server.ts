@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { convertPdfToPngPages } from "./pdf.ts";
 import { ocrImageToMarkdown, ocrImageViaGlmOcrSdk, normalizeHost } from "./ocr.ts";
+import * as logger from "./logger.ts";
 
 type HealthStatus = {
   app: boolean;
@@ -176,6 +177,7 @@ async function streamOcrResults(
   let successful = 0;
   let failed = 0;
 
+  logger.log("OCR batch started", { fileCount: files.length });
   await mkdir(tempRoot, { recursive: true });
 
   for (const file of files) {
@@ -190,6 +192,7 @@ async function streamOcrResults(
 
     if (!allowedExtensions.has(extension)) {
       failed += 1;
+      logger.warn("Rejected file: unsupported type", { fileId, fileName, extension });
       send("error", {
         fileId,
         fileName,
@@ -200,6 +203,7 @@ async function streamOcrResults(
 
     if (file.size > config.maxFileSizeBytes) {
       failed += 1;
+      logger.warn("Rejected file: exceeds max size", { fileId, fileName, sizeBytes: file.size });
       send("error", {
         fileId,
         fileName,
@@ -269,8 +273,9 @@ async function streamOcrResults(
             page: pageNumber,
             markdown
           });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Unknown OCR error";
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Unknown OCR error";
+          logger.error("OCR failed for page", err, { fileId, fileName, page: pageNumber });
           send("error", {
             fileId,
             fileName,
@@ -282,6 +287,7 @@ async function streamOcrResults(
 
       if (pageResults.length === 0) {
         failed += 1;
+        logger.warn("No pages processed successfully", { fileId, fileName });
       } else {
         successful += 1;
         const finalMarkdown =
@@ -298,9 +304,10 @@ async function streamOcrResults(
           elapsedMs: Date.now() - startedAt
         });
       }
-    } catch (error) {
+    } catch (err) {
       failed += 1;
-      const message = error instanceof Error ? error.message : "Unknown processing error";
+      const message = err instanceof Error ? err.message : "Unknown processing error";
+      logger.error("Unhandled error processing file", err, { fileId, fileName });
       send("error", {
         fileId,
         fileName,
@@ -311,6 +318,7 @@ async function streamOcrResults(
     }
   }
 
+  logger.log("OCR batch done", { total: files.length, successful, failed });
   send("batch-done", {
     totalFiles: files.length,
     successful,
@@ -340,6 +348,15 @@ function collectFiles(formData: FormData): File[] {
   return files;
 }
 
+process.on("unhandledRejection", (reason) => {
+  logger.error("Unhandled promise rejection", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  logger.error("Uncaught exception — shutting down", err);
+  process.exit(1);
+});
+
 const server = Bun.serve({
   port: config.port,
   idleTimeout: 255,
@@ -363,12 +380,15 @@ const server = Bun.serve({
       let formData: FormData;
       try {
         formData = await request.formData();
-      } catch {
+      } catch (err) {
+        logger.warn("Failed to parse multipart form data", { url: url.pathname });
+        logger.error("Form parse error", err);
         return new Response("Expected multipart/form-data", { status: 400 });
       }
 
       const files = collectFiles(formData);
       if (files.length === 0) {
+        logger.warn("OCR request received with no valid files");
         return new Response("No files uploaded", { status: 400 });
       }
 
@@ -391,8 +411,16 @@ const server = Bun.serve({
       });
     }
 
+    logger.warn("Route not found", { method: request.method, path: url.pathname });
     return new Response("Not found", { status: 404 });
   }
 });
 
-console.log(`OCR app listening on http://localhost:${server.port}`);
+logger.log(`OCR app listening on http://localhost:${server.port}`, {
+  ollamaHost: config.ollamaHost,
+  ollamaModel: config.ollamaModel,
+  pdfDpi: config.pdfDpi,
+  ocrTimeoutMs: config.ocrTimeoutMs,
+  maxFileSizeMb: Math.round(config.maxFileSizeBytes / 1024 / 1024),
+  numCtx: config.numCtx
+});

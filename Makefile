@@ -4,7 +4,7 @@ SHELL := /bin/sh
 APP_NAME ?= ocr-app
 COMPOSE ?= docker compose
 
-.PHONY: help install build build-sidecar build-all dev up down logs-sidecar
+.PHONY: help install build build-sidecar build-all dev up start run down stop clean logs-sidecar
 
 help: ## Recap available commands
 	@printf "Usage: make <target>\n\n"
@@ -29,8 +29,18 @@ dev: ## Run app locally with Bun (no Docker)
 up: ## Start app in Docker Compose (detached)
 	$(COMPOSE) up -d
 
+start: up ## Alias for up
+
+run: up ## Alias for up
+
 down: ## Stop app and remove compose resources
 	$(COMPOSE) down
+
+stop: down ## Alias for down
+
+clean: ## Remove Docker image and stopped containers for this app
+	$(COMPOSE) down --rmi local --volumes --remove-orphans
+	-docker rmi $(APP_NAME) 2>/dev/null || true
 
 logs-sidecar: ## Tail GLM-OCR sidecar logs
 	$(COMPOSE) logs -f glmocr-sidecar
