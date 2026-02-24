@@ -1,0 +1,27 @@
+FROM python:3.12-slim
+
+# System deps for OpenCV and PaddlePaddle layout detection
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git libgl1 libglib2.0-0 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install GLM-OCR SDK with all extras (server, layout, pdf)
+# Use CPU-only PyTorch to keep image size ~2-3GB instead of ~8GB
+RUN pip install --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    "glmocr[all] @ git+https://github.com/zai-org/GLM-OCR.git"
+
+# Copy sidecar config and entrypoint
+COPY glmocr-config.yaml /app/config.yaml
+COPY glmocr-entrypoint.sh /app/glmocr-entrypoint.sh
+RUN chmod +x /app/glmocr-entrypoint.sh
+
+ENV OLLAMA_HOST=http://host.docker.internal:11434
+ENV OLLAMA_MODEL=glm-ocr
+ENV ENABLE_LAYOUT=true
+
+EXPOSE 5002
+
+CMD ["/app/glmocr-entrypoint.sh"]
